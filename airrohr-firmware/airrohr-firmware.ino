@@ -118,30 +118,15 @@
 #if defined(ESP8266)
 #include <FS.h>                     // must be first
 #include <ESP8266WiFi.h>
-#include <DNSServer.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include <ESP8266httpUpdate.h>
 #include <SoftwareSerial.h>
 #include "./oledfont.h"				// avoids including the default Arial font, needs to be included before SSD1306.h
-#include <SSD1306.h>
-#include <SH1106.h>
-#include <LiquidCrystal_I2C.h>
 #include <base64.h>
-#include <ArduinoJson.h>
-#include "./DHT.h"
-#include <Adafruit_HTU21DF.h>
-#include <Adafruit_BMP085.h>
-#include <Adafruit_BMP280.h>
-#include <Adafruit_BME280.h>
-#include <DallasTemperature.h>
-#include <TinyGPS++.h>
 #include <time.h>
 #include <coredecls.h>
-#include <assert.h>
 #include <Hash.h>
-#include "./sps30_i2c.h"
-#include "./dnms_i2c.h"
 #endif
 
 #if defined(ESP32)
@@ -155,24 +140,27 @@
 #include <hwcrypto/sha.h>
 #include <HTTPUpdate.h>
 #include <WebServer.h>
-#include <DNSServer.h>
 #include <ESPmDNS.h>
-#include <SSD1306.h>
-#include <SH1106.h>
-#include <LiquidCrystal_I2C.h>
 #include <base64.h>
+#endif
+
 #include <ArduinoJson.h>
-#include "./DHT.h"
 #include <Adafruit_HTU21DF.h>
 #include <Adafruit_BMP085.h>
 #include <Adafruit_BMP280.h>
 #include <Adafruit_BME280.h>
 #include <DallasTemperature.h>
+#include <LiquidCrystal_I2C.h>
+#include <SSD1306.h>
+#include <SH1106.h>
+
+#if defined(SENSOR_GPS)
 #include <TinyGPS++.h>
+#endif
+
+#include "./DHT.h"
 #include "./sps30_i2c.h"
 #include "./dnms_i2c.h"
-
-#endif
 
 #if defined(INTL_BG)
 #include "intl_bg.h"
@@ -209,15 +197,15 @@
 /******************************************************************
  * Constants                                                      *
  ******************************************************************/
-const unsigned long SAMPLETIME_MS = 30000;									// time between two measurements of the PPD42NS
-const unsigned long SAMPLETIME_SDS_MS = 1000;								// time between two measurements of the SDS011, PMSx003, Honeywell PM sensor
-const unsigned long WARMUPTIME_SDS_MS = 15000;								// time needed to "warm up" the sensor before we can take the first measurement
-const unsigned long READINGTIME_SDS_MS = 5000;								// how long we read data from the PM sensors
-const unsigned long SAMPLETIME_GPS_MS = 50;
-const unsigned long DISPLAY_UPDATE_INTERVAL_MS = 5000;						// time between switching display to next "screen"
-const unsigned long ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
-const unsigned long PAUSE_BETWEEN_UPDATE_ATTEMPTS_MS = ONE_DAY_IN_MS;		// check for firmware updates once a day
-const unsigned long DURATION_BEFORE_FORCED_RESTART_MS = ONE_DAY_IN_MS * 28;	// force a reboot every ~4 weeks
+constexpr unsigned long SAMPLETIME_MS = 30000;									// time between two measurements of the PPD42NS
+constexpr unsigned long SAMPLETIME_SDS_MS = 1000;								// time between two measurements of the SDS011, PMSx003, Honeywell PM sensor
+constexpr unsigned long WARMUPTIME_SDS_MS = 15000;								// time needed to "warm up" the sensor before we can take the first measurement
+constexpr unsigned long READINGTIME_SDS_MS = 5000;								// how long we read data from the PM sensors
+constexpr unsigned long SAMPLETIME_GPS_MS = 50;
+constexpr unsigned long DISPLAY_UPDATE_INTERVAL_MS = 5000;						// time between switching display to next "screen"
+constexpr unsigned long ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
+constexpr unsigned long PAUSE_BETWEEN_UPDATE_ATTEMPTS_MS = ONE_DAY_IN_MS;		// check for firmware updates once a day
+constexpr unsigned long DURATION_BEFORE_FORCED_RESTART_MS = ONE_DAY_IN_MS * 28;	// force a reboot every ~4 weeks
 
 /******************************************************************
  * The variables inside the cfg namespace are persistent          *
@@ -371,6 +359,7 @@ ESP8266WebServer server(80);
 #endif
 #if defined(ESP32)
 WebServer server(80);
+String emptyString;
 #endif
 
 int TimeZone = 1;
@@ -396,11 +385,13 @@ float dnms_corr_value = 0;
 /*****************************************************************
  * Display definitions                                           *
  *****************************************************************/
+#if defined(SUPPORT_DISPLAY)
 SSD1306 display(0x3c, I2C_PIN_SDA, I2C_PIN_SCL);
 SH1106 display_sh1106(0x3c, I2C_PIN_SDA, I2C_PIN_SCL);
 LiquidCrystal_I2C lcd_1602_27(0x27, 16, 2);
 LiquidCrystal_I2C lcd_1602_3f(0x3F, 16, 2);
 LiquidCrystal_I2C lcd_2004_27(0x27, 20, 4);
+#endif
 
 /*****************************************************************
  * SDS011 declarations                                           *
@@ -442,13 +433,17 @@ Adafruit_BME280 bme280;
 /*****************************************************************
  * DS18B20 declaration                                            *
  *****************************************************************/
+#if defined(SUPPORT_DALLAS)
 OneWire oneWire(ONEWIRE_PIN);
 DallasTemperature ds18b20(&oneWire);
+#endif
 
 /*****************************************************************
  * GPS declaration                                               *
  *****************************************************************/
+#if defined(SUPPORT_GPS)
 TinyGPSPlus gps;
+#endif
 
 /*****************************************************************
  * Variable Definitions for PPD24NS                              *
@@ -604,10 +599,6 @@ template<typename T, std::size_t N> constexpr std::size_t array_num_elements(con
 	return N;
 }
 
-template<typename T, std::size_t N> constexpr std::size_t capacity_null_terminated_char_array(const T(&)[N]) {
-	return N - 1;
-}
-
 #define msSince(timestamp_before) (act_milli - (timestamp_before))
 
 const char data_first_part[] PROGMEM = "{\"software_version\": \"{v}\", \"sensordatavalues\":[";
@@ -632,6 +623,7 @@ void debug_outln(const __FlashStringHelper* text, const int level) { debug_level
  * display values                                                *
  *****************************************************************/
 void display_debug(const String& text1, const String& text2) {
+#if defined(SUPPORT_DISPLAY)
 	debug_outln(F("output debug text to displays..."), DEBUG_MIN_INFO);
 	debug_outln(text1 + "\n" + text2, DEBUG_MAX_INFO);
 	if (cfg::has_display) {
@@ -671,6 +663,7 @@ void display_debug(const String& text1, const String& text2) {
 		lcd_2004_27.setCursor(0, 1);
 		lcd_2004_27.print(text2);
 	}
+#endif
 }
 
 /*****************************************************************
@@ -714,32 +707,6 @@ String Value2Json(const __FlashStringHelper* type, const String& value) {
 
 String Value2Json(const __FlashStringHelper* type, const float& value) {
 	return Value2Json(type, Float2String(value));
-}
-
-/*****************************************************************
- * convert string value to json string                           *
- *****************************************************************/
-String Var2Json(const String& name, const String& value) {
-	String s = FPSTR(WEB_REPLN_REPLV);
-	String tmp = value;
-	tmp.replace("\\", "\\\\"); tmp.replace("\"", "\\\"");
-	s.replace("{n}", name);
-	s.replace("{v}", tmp);
-	return s;
-}
-
-/*****************************************************************
- * convert boolean value to json string                          *
- *****************************************************************/
-String Var2Json(const String& name, const bool value) {
-	return Var2Json(name, String(value ? "true" : "false"));
-}
-
-/*****************************************************************
- * convert boolean value to json string                          *
- *****************************************************************/
-String Var2Json(const String& name, const int value) {
-	return Var2Json(name, String(value));
 }
 
 /*****************************************************************
@@ -806,8 +773,8 @@ static bool PMS_cmd(PmSensorCmd cmd) {
 		memcpy_P(buf, continuous_mode_cmd, cmd_len);
 		break;
 	case PmSensorCmd::VersionDate:
-		assert(false && "not supported by this sensor");
-		break;
+		//"not supported by this sensor";
+		return false;
 	}
 	serialSDS.write(buf, cmd_len);
 	return cmd != PmSensorCmd::Stop;
@@ -840,8 +807,8 @@ static bool HPM_cmd(PmSensorCmd cmd) {
 		memcpy_P(buf, continuous_mode_cmd, cmd_len);
 		break;
 	case PmSensorCmd::VersionDate:
-		assert(false && "not supported by this sensor");
-		break;
+		//"not supported by this sensor";
+		return false;
 	}
 	serialSDS.write(buf, cmd_len);
 	return cmd != PmSensorCmd::Stop;
@@ -963,6 +930,94 @@ void disable_unneeded_nmea() {
 	serialGPS.println(F("$PUBX,40,VTG,0,0,0,0*5E"));       // Track made good and ground speed
 }
 
+enum ConfigEntryType {
+	Config_Type_Bool,
+	Config_Type_Int,
+	Config_Type_String
+};
+
+struct ConfigShapeEntry {
+	ConfigEntryType cfg_type : 2;
+	const char * cfg_key;
+	union {
+		void* as_void;
+		bool* as_bool;
+		int* as_int;
+		char** as_str;
+	} cfg_val;
+};
+
+ConfigShapeEntry configShape[] = {
+#define Config_Bool(varname) { Config_Type_Bool, #varname, &cfg::varname }
+#define Config_String(varname) { Config_Type_String, #varname, &cfg::varname }
+#define Config_Int(varname) { Config_Type_Int, #varname, &cfg::varname }
+	Config_String(current_lang),
+	Config_String(wlanssid),
+	Config_String(wlanpwd),
+	Config_String(www_username),
+	Config_String(www_password),
+	Config_String(fs_ssid),
+	Config_String(fs_pwd),
+	Config_Bool(www_basicauth_enabled),
+	Config_Bool(dht_read),
+	Config_Bool(htu21d_read),
+	Config_Bool(ppd_read),
+	Config_Bool(sds_read),
+	Config_Bool(pms_read),
+	Config_Bool(hpm_read),
+	Config_Bool(sps30_read),
+	Config_Bool(bmp_read),
+	Config_Bool(bmp280_read),
+	Config_Bool(bme280_read),
+	Config_Bool(ds18b20_read),
+	Config_Bool(dnms_read),
+	Config_String(dnms_correction),
+	Config_Bool(gps_read),
+	Config_Bool(send2dusti),
+	Config_Bool(ssl_dusti),
+	Config_Bool(send2madavi),
+	Config_Bool(ssl_madavi),
+	Config_Bool(send2sensemap),
+	Config_Bool(send2fsapp),
+	Config_Bool(send2aircms),
+	Config_Bool(send2lora),
+	Config_Bool(send2csv),
+	Config_Bool(auto_update),
+	Config_Bool(use_beta),
+	Config_Bool(has_display),
+	Config_Bool(has_sh1106),
+	Config_Bool(has_flipped_display),
+	Config_Bool(has_lcd1602),
+	Config_Bool(has_lcd1602_27),
+	Config_Bool(has_lcd2004_27),
+	Config_Bool(display_wifi_info),
+	Config_Bool(display_device_info),
+	Config_String(debug),
+	Config_String(sending_intervall_ms),
+	Config_String(time_for_wifi_config),
+	Config_String(senseboxid),
+	Config_Bool(send2custom),
+	Config_String(host_custom),
+	Config_String(url_custom),
+	Config_Int(port_custom),
+	Config_String(user_custom),
+	Config_String(pwd_custom),
+	Config_Bool(ssl_custom),
+	Config_Bool(send2influx),
+	Config_String(host_influx),
+	Config_String(url_influx),
+	Config_Int(port_influx),
+	Config_String(user_influx),
+	Config_String(pwd_influx),
+	Config_String(measurement_name_influx),
+	Config_Bool(ssl_influx),
+
+#undef Config_Bool
+#undef Config_String
+#undef Config_Int
+};
+
+
 /*****************************************************************
  * read config from spiffs                                       *
  *****************************************************************/
@@ -995,78 +1050,29 @@ void readConfig() {
 						strcpy(version_from_local_config, json["SOFTWARE_VERSION"]);
 					}
 
-#define setFromJSON(key)    if (json.containsKey(#key)) key = json[#key];
-#define strcpyFromJSON(key) if (json.containsKey(#key)) strcpy(key, json[#key]);
-					strcpyFromJSON(current_lang);
-					strcpyFromJSON(wlanssid);
-					strcpyFromJSON(wlanpwd);
-					strcpyFromJSON(www_username);
-					strcpyFromJSON(www_password);
-					strcpyFromJSON(fs_ssid);
-					strcpyFromJSON(fs_pwd);
+	for (unsigned e = 0; e < sizeof(configShape)/sizeof(configShape[0]); ++e) {
+		const ConfigShapeEntry& c = configShape[e];
+		switch (c.cfg_type) {
+		case Config_Type_Bool:
+			*c.cfg_val.as_bool = json[c.cfg_key];
+			;;
+		case Config_Type_Int:
+			*c.cfg_val.as_int = json[c.cfg_key];
+			;;
+		case Config_Type_String:
+			strcpy(*c.cfg_val.as_str, json[c.cfg_key]);
+			;;
+		};
+	}
 
-					setFromJSON(www_basicauth_enabled);
-					setFromJSON(dht_read);
-					setFromJSON(htu21d_read);
-					setFromJSON(ppd_read);
-					setFromJSON(sds_read);
-					setFromJSON(pms_read);
-					setFromJSON(pms24_read);
-					setFromJSON(pms32_read);
-					setFromJSON(hpm_read);
-					setFromJSON(sps30_read);
-					setFromJSON(bmp_read);
-					setFromJSON(bmp280_read);
-					setFromJSON(bme280_read);
-					setFromJSON(ds18b20_read);
-					setFromJSON(dnms_read);
-					strcpyFromJSON(dnms_correction);
-					setFromJSON(gps_read);
-					setFromJSON(send2dusti);
-					setFromJSON(ssl_dusti);
-					setFromJSON(send2madavi);
-					setFromJSON(ssl_madavi);
-					setFromJSON(send2sensemap);
-					setFromJSON(send2fsapp);
-					setFromJSON(send2aircms);
-					setFromJSON(send2lora);
-					setFromJSON(send2csv);
-					setFromJSON(auto_update);
-					setFromJSON(use_beta);
-					setFromJSON(has_display);
-					setFromJSON(has_sh1106);
-					setFromJSON(has_flipped_display);
-					setFromJSON(has_lcd1602);
-					setFromJSON(has_lcd1602_27);
-					setFromJSON(has_lcd2004_27);
-					setFromJSON(display_wifi_info);
-					setFromJSON(display_device_info);
-					setFromJSON(debug);
-					setFromJSON(sending_intervall_ms);
-					setFromJSON(time_for_wifi_config);
-					strcpyFromJSON(senseboxid);
-					if (strcmp(senseboxid, "00112233445566778899aabb") == 0) {
-						strcpy(senseboxid, "");
-						send2sensemap = 0;
-					}
-					setFromJSON(send2custom);
-					strcpyFromJSON(host_custom);
-					strcpyFromJSON(url_custom);
-					setFromJSON(port_custom);
-					strcpyFromJSON(user_custom);
-					strcpyFromJSON(pwd_custom);
-					setFromJSON(ssl_custom);
-					setFromJSON(send2influx);
-					strcpyFromJSON(host_influx);
-					strcpyFromJSON(url_influx);
-					setFromJSON(port_influx);
-					strcpyFromJSON(user_influx);
-					strcpyFromJSON(pwd_influx);
-					strcpyFromJSON(measurement_name_influx);
+
+	if (strcmp(senseboxid, "00112233445566778899aabb") == 0) {
+		strcpy(senseboxid, "");
+		send2sensemap = 0;
+	}
 					if (strlen(measurement_name_influx) == 0) {
 						strcpy(measurement_name_influx, MEASUREMENT_NAME_INFLUX);
 					}
-					setFromJSON(ssl_influx);
 					if (strcmp(host_influx, "api.luftdaten.info") == 0) {
 						strcpy(host_influx, "");
 						send2influx = 0;
@@ -1076,8 +1082,6 @@ void readConfig() {
 						pms_read = 1;
 						writeConfig();
 					}
-#undef setFromJSON
-#undef strcpyFromJSON
 				} else {
 					debug_outln(F("failed to load json config"), DEBUG_ERROR);
 				}
@@ -1094,88 +1098,32 @@ void readConfig() {
  * write config to spiffs                                        *
  *****************************************************************/
 void writeConfig() {
-	using namespace cfg;
-	String json_string = "{";
+	String json_string;
+	DynamicJsonDocument json(JSON_BUFFER_SIZE);
+
 	debug_outln(F("saving config..."), DEBUG_MIN_INFO);
 
-#define copyToJSON_Bool(varname) json_string += Var2Json(#varname, varname);
-#define copyToJSON_Int(varname) json_string += Var2Json(#varname, varname);
-#define copyToJSON_String(varname) json_string += Var2Json(#varname, String(varname));
-	copyToJSON_String(current_lang);
-	copyToJSON_String(SOFTWARE_VERSION);
-	copyToJSON_String(wlanssid);
-	copyToJSON_String(wlanpwd);
-	copyToJSON_String(www_username);
-	copyToJSON_String(www_password);
-	copyToJSON_String(fs_ssid);
-	copyToJSON_String(fs_pwd);
-	copyToJSON_Bool(www_basicauth_enabled);
-	copyToJSON_Bool(dht_read);
-	copyToJSON_Bool(htu21d_read);
-	copyToJSON_Bool(ppd_read);
-	copyToJSON_Bool(sds_read);
-	copyToJSON_Bool(pms_read);
-	copyToJSON_Bool(hpm_read);
-	copyToJSON_Bool(sps30_read);
-	copyToJSON_Bool(bmp_read);
-	copyToJSON_Bool(bmp280_read);
-	copyToJSON_Bool(bme280_read);
-	copyToJSON_Bool(ds18b20_read);
-	copyToJSON_Bool(dnms_read);
-	copyToJSON_String(dnms_correction);
-	copyToJSON_Bool(gps_read);
-	copyToJSON_Bool(send2dusti);
-	copyToJSON_Bool(ssl_dusti);
-	copyToJSON_Bool(send2madavi);
-	copyToJSON_Bool(ssl_madavi);
-	copyToJSON_Bool(send2sensemap);
-	copyToJSON_Bool(send2fsapp);
-	copyToJSON_Bool(send2aircms);
-	copyToJSON_Bool(send2lora);
-	copyToJSON_Bool(send2csv);
-	copyToJSON_Bool(auto_update);
-	copyToJSON_Bool(use_beta);
-	copyToJSON_Bool(has_display);
-	copyToJSON_Bool(has_sh1106);
-	copyToJSON_Bool(has_flipped_display);
-	copyToJSON_Bool(has_lcd1602);
-	copyToJSON_Bool(has_lcd1602_27);
-	copyToJSON_Bool(has_lcd2004_27);
-	copyToJSON_Bool(display_wifi_info);
-	copyToJSON_Bool(display_device_info);
-	copyToJSON_String(debug);
-	copyToJSON_String(sending_intervall_ms);
-	copyToJSON_String(time_for_wifi_config);
-	copyToJSON_String(senseboxid);
-	copyToJSON_Bool(send2custom);
-	copyToJSON_String(host_custom);
-	copyToJSON_String(url_custom);
-	copyToJSON_Int(port_custom);
-	copyToJSON_String(user_custom);
-	copyToJSON_String(pwd_custom);
-	copyToJSON_Bool(ssl_custom);
-
-	copyToJSON_Bool(send2influx);
-	copyToJSON_String(host_influx);
-	copyToJSON_String(url_influx);
-	copyToJSON_Int(port_influx);
-	copyToJSON_String(user_influx);
-	copyToJSON_String(pwd_influx);
-	copyToJSON_String(measurement_name_influx);
-	copyToJSON_Bool(ssl_influx);
-#undef copyToJSON_Bool
-#undef copyToJSON_Int
-#undef copyToJSON_String
-
-	json_string.remove(json_string.length() - 1);
-	json_string += "}";
+	for (unsigned e = 0; e < sizeof(configShape)/sizeof(configShape[0]); ++e) {
+		const ConfigShapeEntry& c = configShape[e];
+		switch (c.cfg_type) {
+		case Config_Type_Bool:
+			json[c.cfg_key] = *c.cfg_val.as_bool;
+			;;
+		case Config_Type_Int:
+			json[c.cfg_key] = *c.cfg_val.as_int;
+			;;
+		case Config_Type_String:
+			json[c.cfg_key] = *c.cfg_val.as_str;
+			;;
+		};
+	}
 
 	File configFile = SPIFFS.open("/config.json", "w");
 	if (configFile) {
-		configFile.print(json_string);
-		debug_out(F("Config written: "), DEBUG_MIN_INFO);
-		debug_outln(json_string, DEBUG_MAX_INFO);
+		debug_outln(F("Before writing config.."), DEBUG_MIN_INFO);
+		serializeJson(json, configFile);
 		configFile.close();
+		debug_outln(F("Config written successfully."), DEBUG_MIN_INFO);
 	} else {
 		debug_outln(F("failed to open config file for writing"), DEBUG_ERROR);
 	}
@@ -1467,11 +1415,11 @@ void webserver_root() {
 		if (!webserver_request_auth())
 		{ return; }
 
-		String page_content = make_header(" ");
+		String page_content = make_header(F(" "));
 		last_page_load = millis();
 		debug_outln(F("output root page..."), DEBUG_MIN_INFO);
 		page_content += FPSTR(WEB_ROOT_PAGE_CONTENT);
-		page_content.replace("{t}", FPSTR(INTL_CURRENT_DATA));
+		page_content.replace(F("{t}"), FPSTR(INTL_CURRENT_DATA));
 		page_content.replace(F("{map}"), FPSTR(INTL_ACTIVE_SENSORS_MAP));
 		page_content.replace(F("{conf}"), FPSTR(INTL_CONFIGURATION));
 		page_content.replace(F("{conf_delete}"), FPSTR(INTL_CONFIGURATION_DELETE));
@@ -2313,16 +2261,19 @@ void wifiConfig() {
 		// In case we create a unique password at first start
 		debug_outln(String(F("AP Password is: ")) + String(WLANPWD), DEBUG_MIN_INFO);
 
+#if defined(USE_AP_DNSSERVER)
 		DNSServer dnsServer;
 		dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
 		dnsServer.start(53, "*", apIP);							// 53 is port for DNS server
-
+#endif
 		setup_webserver();
 
 		// 10 minutes timeout for wifi config
 		last_page_load = millis();
 		while (((millis() - last_page_load) < cfg::time_for_wifi_config)) {
+#if defined(USE_AP_DNSSERVER)
 			dnsServer.processNextRequest();
+#endif
 			server.handleClient();
 #if defined(ESP8266)
 			wdt_reset(); // nodemcu is alive
@@ -2330,10 +2281,13 @@ void wifiConfig() {
 			yield();
 		}
 
+#if defined(USE_AP_DNSSERVER)
+		dnsServer.stop();
+#endif
+
 		// half second to answer last requests
 		last_page_load = millis();
 		while ((millis() - last_page_load) < 500) {
-			dnsServer.processNextRequest();
 			server.handleClient();
 			yield();
 		}
@@ -2341,8 +2295,6 @@ void wifiConfig() {
 		WiFi.disconnect(true);
 		WiFi.softAPdisconnect(true);
 		WiFi.mode(WIFI_STA);
-
-		dnsServer.stop();
 	}
 
 	delay(100);
@@ -2692,7 +2644,7 @@ static String sensorDHT() {
 			s += Value2Json(F("humidity"), last_value_DHT_H);
 		}
 	}
-	debug_outln("----", DEBUG_MIN_INFO);
+	debug_outln(F("----"), DEBUG_MIN_INFO);
 
 	debug_outln(String(FPSTR(DBG_TXT_END_READING)) + "DHT11/22", DEBUG_MED_INFO);
 
@@ -2721,7 +2673,7 @@ static String sensorHTU21D() {
 		s += Value2Json(F("HTU21D_temperature"), last_value_HTU21D_T);
 		s += Value2Json(F("HTU21D_humidity"), last_value_HTU21D_H);
 	}
-	debug_outln("----", DEBUG_MIN_INFO);
+	debug_outln(F("----"), DEBUG_MIN_INFO);
 
 	debug_outln(String(FPSTR(DBG_TXT_END_READING)) + FPSTR(SENSORS_HTU21D), DEBUG_MED_INFO);
 
@@ -2750,7 +2702,7 @@ static String sensorBMP() {
 		s += Value2Json(F("BMP_pressure"), last_value_BMP_P);
 		s += Value2Json(F("BMP_temperature"), last_value_BMP_T);
 	}
-	debug_outln("----", DEBUG_MIN_INFO);
+	debug_outln(F("----"), DEBUG_MIN_INFO);
 
 	debug_outln(String(FPSTR(DBG_TXT_END_READING)) + FPSTR(SENSORS_BMP180), DEBUG_MED_INFO);
 
@@ -2779,7 +2731,7 @@ static String sensorBMP280() {
 		s += Value2Json(F("BMP280_pressure"), last_value_BMP280_P);
 		s += Value2Json(F("BMP280_temperature"), last_value_BMP280_T);
 	}
-	debug_outln("----", DEBUG_MIN_INFO);
+	debug_outln(F("----"), DEBUG_MIN_INFO);
 
 	debug_outln(String(FPSTR(DBG_TXT_END_READING)) + FPSTR(SENSORS_BMP280), DEBUG_MED_INFO);
 
@@ -2814,7 +2766,7 @@ static String sensorBME280() {
 		s += Value2Json(F("BME280_humidity"), last_value_BME280_H);
 		s += Value2Json(F("BME280_pressure"), last_value_BME280_P);
 	}
-	debug_outln("----", DEBUG_MIN_INFO);
+	debug_outln(F("----"), DEBUG_MIN_INFO);
 
 	debug_outln(String(FPSTR(DBG_TXT_END_READING)) + FPSTR(SENSORS_BME280), DEBUG_MED_INFO);
 
@@ -2824,6 +2776,7 @@ static String sensorBME280() {
 /*****************************************************************
  * read DS18B20 sensor values                                    *
  *****************************************************************/
+#if defined(SUPPORT_DALLAS)
 static String sensorDS18B20() {
 	double t;
 	debug_outln(String(FPSTR(DBG_TXT_START_READING)) + FPSTR(SENSORS_DS18B20), DEBUG_MED_INFO);
@@ -2850,11 +2803,12 @@ static String sensorDS18B20() {
 		last_value_DS18B20_T = t;
 		s += Value2Json(F("DS18B20_temperature"), last_value_DS18B20_T);
 	}
-	debug_outln("----", DEBUG_MIN_INFO);
+	debug_outln(F("----"), DEBUG_MIN_INFO);
 	debug_outln(String(FPSTR(DBG_TXT_END_READING)) + FPSTR(SENSORS_DS18B20), DEBUG_MED_INFO);
 
 	return s;
 }
+#endif
 
 /*****************************************************************
  * read SDS011 sensor values                                     *
@@ -3392,7 +3346,7 @@ static String sensorPPD() {
 		s += Value2Json(F("ratioP2"), ratio);
 		s += Value2Json(F("P2"), last_value_PPD_P2);
 
-		debug_outln("----", DEBUG_MIN_INFO);
+		debug_outln(F("----"), DEBUG_MIN_INFO);
 	}
 
 	debug_outln(String(FPSTR(DBG_TXT_END_READING)) + FPSTR(SENSORS_PPD42NS), DEBUG_MED_INFO);
@@ -3527,6 +3481,7 @@ String sensorDNMS() {
 String sensorGPS() {
 	String s, gps_lat, gps_lon;
 
+#if defined(SENSOR_GPS)
 	debug_outln(String(FPSTR(DBG_TXT_START_READING)) + "GPS", DEBUG_MED_INFO);
 
 	while (serialGPS.available() > 0) {
@@ -3611,7 +3566,7 @@ String sensorGPS() {
 	}
 
 	debug_outln(String(FPSTR(DBG_TXT_END_READING)) + "GPS", DEBUG_MED_INFO);
-
+#endif
 	return s;
 }
 
@@ -3669,6 +3624,7 @@ static String displayGenerateFooter(unsigned int screen_count) {
 /*****************************************************************
  * display values                                                *
  *****************************************************************/
+#if defined(SUPPORT_DISPLAY)
 void display_values() {
 	double t_value = -128.0;
 	double h_value = -1.0;
@@ -3861,7 +3817,6 @@ void display_values() {
 			display_lines[2] = "Measurements: " + String(count_sends);
 			break;
 		}
-
 		if (cfg::has_display) {
 			display.clear();
 			display.displayOn();
@@ -3981,6 +3936,7 @@ void init_lcd() {
 		lcd_2004_27.backlight();
 	}
 }
+#endif
 
 /*****************************************************************
  * Init BMP280                                                   *
@@ -4145,10 +4101,12 @@ static void powerOnTestSensors() {
 		}
 	}
 
+#if defined(SUPPORT_DALLAS)
 	if (cfg::ds18b20_read) {
 		ds18b20.begin();									// Start DS18B20
 		debug_outln(F("Read DS18B20..."), DEBUG_MIN_INFO);
 	}
+#endif
 
 	if (cfg::dnms_read) {
 		debug_outln(F("Read DNMS..."), DEBUG_MIN_INFO);
@@ -4189,10 +4147,10 @@ static void logEnabledAPIs() {
 	if (cfg::send2influx) {
 		debug_outln(F("custom influx DB"), DEBUG_MIN_INFO);
 	}
-	debug_outln("", DEBUG_MIN_INFO);
+	debug_outln(F(""), DEBUG_MIN_INFO);
 	if (cfg::auto_update) {
 		debug_outln(F("Auto-Update active..."), DEBUG_MIN_INFO);
-		debug_outln("", DEBUG_MIN_INFO);
+		debug_outln(F(""), DEBUG_MIN_INFO);
 	}
 }
 
@@ -4216,7 +4174,7 @@ static bool acquireNetworkTime() {
 	int retryCount = 0;
 	debug_outln(F("Setting time using SNTP"), DEBUG_MIN_INFO);
 	time_t now = time(nullptr);
-	debug_outln(ctime(&now), DEBUG_MIN_INFO);
+	debug_outln(String(ctime(&now)), DEBUG_MIN_INFO);
 	debug_outln(F("NTP.org:"), DEBUG_MIN_INFO);
 #if defined(ESP8266)
 	settimeofday_cb(time_is_set);
@@ -4226,11 +4184,11 @@ static bool acquireNetworkTime() {
 		// later than 2000/01/01:00:00:00
 		if (sntp_time_is_set) {
 			now = time(nullptr);
-			debug_outln(ctime(&now), DEBUG_MIN_INFO);
+			debug_outln(String(ctime(&now)), DEBUG_MIN_INFO);
 			return true;
 		}
 		delay(500);
-		debug_out(".", DEBUG_MIN_INFO);
+		debug_out(F("."), DEBUG_MIN_INFO);
 	}
 	debug_outln(F("\nrouter/gateway:"), DEBUG_MIN_INFO);
 	retryCount = 0;
@@ -4239,11 +4197,11 @@ static bool acquireNetworkTime() {
 		// later than 2000/01/01:00:00:00
 		if (sntp_time_is_set) {
 			now = time(nullptr);
-			debug_outln(ctime(&now), DEBUG_MIN_INFO);
+			debug_outln(String(ctime(&now)), DEBUG_MIN_INFO);
 			return true;
 		}
 		delay(500);
-		debug_out(".", DEBUG_MIN_INFO);
+		debug_out(F("."), DEBUG_MIN_INFO);
 	}
 	return false;
 }
@@ -4278,14 +4236,10 @@ static unsigned long sendDataToOptionalApis(const String &data) {
 		unsigned long ts = millis() / 1000;
 		String login = esp_chipid;
 		String token = WiFi.macAddress();
-
 		String aircms_data = "L=" + login + "&t=" + String(ts, DEC) + "&airrohr=" + data;
-		String token_hash = sha1Hex(token);
-		String hash = hmac1(String(token_hash), aircms_data + token);
-		char char_full_url[100];
-		sprintf(char_full_url, "%s%s", URL_AIRCMS, hash.c_str());
+		String aircms_url = String(URL_AIRCMS) + hmac1(sha1Hex(token), aircms_data + token);
 
-		sum_send_time += sendData(aircms_data, 0, HOST_AIRCMS, PORT_AIRCMS, char_full_url, true, false, "", FPSTR(TXT_CONTENT_TYPE_TEXT_PLAIN));
+		sum_send_time += sendData(aircms_data, 0, HOST_AIRCMS, PORT_AIRCMS, aircms_url.c_str(), true, false, "", FPSTR(TXT_CONTENT_TYPE_TEXT_PLAIN));
 	}
 
 	if (cfg::send2influx) {
@@ -4342,9 +4296,11 @@ void setup() {
 	cfg::initNonTrivials(esp_chipid.c_str());
 	readConfig();
 
+#if defined(SUPPORT_DISPLAY)
 	init_display();
 	init_lcd();
 	display_debug(F("Connecting to"), String(cfg::wlanssid));
+#endif
 	connectWifi();
 	got_ntp = acquireNetworkTime();
 	debug_out(F("\nNTP time "), DEBUG_MIN_INFO);
@@ -4448,25 +4404,29 @@ void loop() {
 	}
 
 	if (cfg::ppd_read) {
-		debug_outln(String(FPSTR(DBG_TXT_CALL_SENSOR)) + "PPD", DEBUG_MAX_INFO);
+		debug_out(FPSTR(DBG_TXT_CALL_SENSOR), DEBUG_MAX_INFO);
+		debug_outln(F("PPD"), DEBUG_MAX_INFO);
 		result_PPD = sensorPPD();
 	}
 
 	if ((msSince(starttime_SDS) > SAMPLETIME_SDS_MS) || send_now) {
 		if (cfg::sds_read) {
-			debug_outln(String(FPSTR(DBG_TXT_CALL_SENSOR)) + "SDS", DEBUG_MAX_INFO);
+			debug_out(FPSTR(DBG_TXT_CALL_SENSOR), DEBUG_MAX_INFO);
+			debug_outln(F("SDS"), DEBUG_MAX_INFO);
 			result_SDS = sensorSDS();
 			starttime_SDS = act_milli;
 		}
 
 		if (cfg::pms_read) {
-			debug_outln(String(FPSTR(DBG_TXT_CALL_SENSOR)) + "PMS", DEBUG_MAX_INFO);
+			debug_out(FPSTR(DBG_TXT_CALL_SENSOR), DEBUG_MAX_INFO);
+			debug_outln(F("PMS"), DEBUG_MAX_INFO);
 			result_PMS = sensorPMS();
 			starttime_SDS = act_milli;
 		}
 
 		if (cfg::hpm_read) {
-			debug_outln(String(FPSTR(DBG_TXT_CALL_SENSOR)) + "HPM", DEBUG_MAX_INFO);
+			debug_out(FPSTR(DBG_TXT_CALL_SENSOR), DEBUG_MAX_INFO);
+			debug_outln(F("HPM"), DEBUG_MAX_INFO);
 			result_HPM = sensorHPM();
 			starttime_SDS = act_milli;
 		}
@@ -4500,10 +4460,12 @@ void loop() {
 			result_BME280 = sensorBME280();					// getting temperature, humidity and pressure (optional)
 		}
 
+#if defined(SUPPORT_DALLAS)
 		if (cfg::ds18b20_read) {
 			debug_outln(String(FPSTR(DBG_TXT_CALL_SENSOR)) + FPSTR(SENSORS_DS18B20), DEBUG_MAX_INFO);
 			result_DS18B20 = sensorDS18B20();				// getting temperature (optional)
 		}
+#endif
 
 		if (cfg::sps30_read && (! sps30_init_failed)) {
 			debug_outln(String(FPSTR(DBG_TXT_CALL_SENSOR)) + FPSTR(SENSORS_SPS30), DEBUG_MAX_INFO);
@@ -4524,7 +4486,7 @@ void loop() {
 
 	if ((cfg::has_display || cfg::has_sh1106 || cfg::has_lcd2004_27 || cfg::has_lcd1602 ||
 			cfg::has_lcd1602_27) && (act_milli > next_display_millis)) {
-		display_values();
+		//display_values();
 	}
 
 	if (send_now) {

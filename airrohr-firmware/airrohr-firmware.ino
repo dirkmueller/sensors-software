@@ -1449,9 +1449,9 @@ void webserver_root() {
  * Webserver config: show config page                            *
  *****************************************************************/
 
-static void webserver_config_body_get(String& page_content) {
+static void webserver_config_send_body_get() {
 	using namespace cfg;
-
+	String page_content;
 
 	debug_outln(F("begin webserver_config_body_get ..."), DEBUG_MIN_INFO);
 	page_content += F("<form method='POST' action='/config' style='width:100%;'>\n<b>");
@@ -1471,6 +1471,10 @@ static void webserver_config_body_get(String& page_content) {
 
 	page_content += FPSTR(INTL_AB_HIER_NUR_ANDERN);
 	page_content += F("</b><br/><br/>\n<b>");
+
+	// Paginate page after ~ 1500 Bytes
+	server.sendContent(page_content);
+	page_content = empty_String;
 
 	if (! wificonfig_loop) {
 		page_content += FPSTR(INTL_BASICAUTH);
@@ -1507,6 +1511,10 @@ static void webserver_config_body_get(String& page_content) {
 
 		page_content += FPSTR(WEB_BR_LF_B);
 
+		// Paginate page after ~ 1500 Bytes
+		server.sendContent(page_content);
+		page_content = empty_String;
+
 		page_content += FPSTR(INTL_SENSORS);
 		page_content += FPSTR(WEB_B_BR);
 		page_content += form_checkbox_sensor("sds_read", FPSTR(INTL_SDS011), sds_read);
@@ -1530,6 +1538,10 @@ static void webserver_config_body_get(String& page_content) {
 
 	}
 
+	// Paginate page after ~ 1500 Bytes
+	server.sendContent(page_content);
+	page_content = empty_String;
+
 	page_content += FPSTR(INTL_MORE_SETTINGS);
 	page_content += FPSTR(WEB_B_BR);
 	page_content += form_checkbox("auto_update", FPSTR(INTL_AUTO_UPDATE), auto_update);
@@ -1542,6 +1554,10 @@ static void webserver_config_body_get(String& page_content) {
 	page_content += form_checkbox("has_lcd2004_27", FPSTR(INTL_LCD2004_27), has_lcd2004_27);
 	page_content += form_checkbox("display_wifi_info", FPSTR(INTL_DISPLAY_WIFI_INFO), display_wifi_info);
 	page_content += form_checkbox("display_device_info", FPSTR(INTL_DISPLAY_DEVICE_INFO), display_device_info);
+
+	// Paginate page after ~ 1500 Bytes
+	server.sendContent(page_content);
+	page_content = empty_String;
 
 	if (! wificonfig_loop) {
 		page_content += FPSTR(TABLE_TAG_OPEN);
@@ -1566,6 +1582,11 @@ static void webserver_config_body_get(String& page_content) {
 		page_content += FPSTR(WEB_NBSP_NBSP_BRACE);
 		page_content += form_checkbox("ssl_custom", FPSTR(WEB_HTTPS), ssl_custom, false);
 		page_content += FPSTR(WEB_BRACE_BR);
+
+		// Paginate page after ~ 1500 Bytes
+		server.sendContent(page_content);
+		page_content = empty_String;
+
 		page_content += FPSTR(TABLE_TAG_OPEN);
 		page_content += form_input("host_custom", FPSTR(INTL_SERVER), host_custom, LEN_HOST_CUSTOM);
 		page_content += form_input("url_custom", FPSTR(INTL_PATH), url_custom, LEN_URL_CUSTOM);
@@ -1599,11 +1620,13 @@ static void webserver_config_body_get(String& page_content) {
 		page_content += FPSTR(WEB_BR_FORM);
 		page_content += F("<script>window.setTimeout(load_wifi_list,1000);</script>");
 	}
+
+	server.sendContent(page_content);
 }
 
-
-static void webserver_config_body_post(String& page_content) {
+static void webserver_config_send_body_post() {
 	String masked_pwd;
+	String page_content;
 
 	using namespace cfg;
 
@@ -1742,6 +1765,11 @@ static void webserver_config_body_post(String& page_content) {
 	page_content += line_from_value_bool(tmpl(FPSTR(INTL_READ_FROM), F("DNMS")), dnms_read);
 	page_content += line_from_value_bool(FPSTR(INTL_DNMS_CORRECTION), String(dnms_correction));
 	page_content += line_from_value_bool(tmpl(FPSTR(INTL_READ_FROM), F("GPS")), gps_read);
+
+	// Paginate after ~ 1500 bytes
+	server.sendContent(page_content);
+	page_content = empty_String;
+
 	page_content += line_from_value_bool(FPSTR(INTL_AUTO_UPDATE), auto_update);
 	page_content += line_from_value_bool(FPSTR(INTL_USE_BETA), use_beta);
 	page_content += line_from_value_bool(FPSTR(INTL_DISPLAY), has_display);
@@ -1759,6 +1787,11 @@ static void webserver_config_body_post(String& page_content) {
 	page_content += line_from_value_bool(tmpl(FPSTR(INTL_SEND_TO), FPSTR(WEB_CSV)), send2csv);
 	page_content += line_from_value_bool(tmpl(FPSTR(INTL_SEND_TO), FPSTR(WEB_FEINSTAUB_APP)), send2fsapp);
 	page_content += line_from_value_bool(tmpl(FPSTR(INTL_SEND_TO), F("opensensemap")), send2sensemap);
+
+	// Paginate after ~ 1500 bytes
+	server.sendContent(page_content);
+	page_content = empty_String;
+
 	page_content += F("<br/>senseBox-ID ");
 	page_content += senseboxid;
 	page_content += FPSTR(WEB_BR_BR);
@@ -1779,38 +1812,41 @@ static void webserver_config_body_post(String& page_content) {
 	page_content += line_from_value(F("SSL"), String(ssl_influx));
 	page_content += FPSTR(WEB_BR_BR);
 	page_content += FPSTR(INTL_SENSOR_IS_REBOOTING);
+
+	server.sendContent(page_content);
 }
 
 void webserver_config() {
 	if (!webserver_request_auth())
 	{ return; }
 
-	String page_content = make_header(FPSTR(INTL_CONFIGURATION));
-	// This is a large page...
-	page_content.reserve(12 * 1024);
-
 	last_page_load = millis();
 
 	debug_outln(F("output config page ..."), DEBUG_MIN_INFO);
-	if (wificonfig_loop) {  // scan for wlan ssids
-		page_content += FPSTR(WEB_CONFIG_SCRIPT);
-	}
-
-	if (server.method() == HTTP_GET) {
-		webserver_config_body_get(page_content);
-	} else {
-		webserver_config_body_post(page_content);
-	}
-	page_content += make_footer();
 
 	server.sendHeader(F("Cache-Control"), F("no-cache, no-store, must-revalidate"));
 	server.sendHeader(F("Pragma"), F("no-cache"));
 	server.sendHeader(F("Expires"), F("0"));
+	// Enable Pagination (Chunked Transfer)
+	server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+
+	String page_content = make_header(FPSTR(INTL_CONFIGURATION));
+	if (wificonfig_loop) {  // scan for wlan ssids
+		page_content += FPSTR(WEB_CONFIG_SCRIPT);
+	}
 	server.send(200, FPSTR(TXT_CONTENT_TYPE_TEXT_HTML), page_content);
+
+	if (server.method() == HTTP_GET) {
+		webserver_config_send_body_get();
+	} else {
+		webserver_config_send_body_post();
+	}
+	server.sendContent(make_footer());
 
 	if (server.method() == HTTP_POST) {
 		display_debug(F("Writing config"), F("and restarting"));
 		writeConfig();
+		delay(100);
 		SPIFFS.end();
 		delay(500);
 		ESP.restart();

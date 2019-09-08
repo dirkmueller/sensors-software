@@ -275,6 +275,7 @@ namespace cfg {
 
 	bool auto_update = AUTO_UPDATE;
 	bool use_beta = USE_BETA;
+	bool use_modem_sleep = USE_MODEM_SLEEP;
 
 	// (in)active displays
 	bool has_display = HAS_DISPLAY;											// OLED with SSD1306 and I2C
@@ -2413,6 +2414,10 @@ static void waitForWifiToConnect(int maxRetries) {
  *****************************************************************/
 void connectWifi() {
 	debug_outln(String(WiFi.status()), DEBUG_MIN_INFO);
+
+	// Avoid Flash Wear issues
+	WiFi.persistent(false);
+
 	WiFi.disconnect();
 #if defined(ESP8266)
 	WiFi.setOutputPower(20.5);
@@ -4476,6 +4481,14 @@ void loop() {
 	}
 
 	server.handleClient();
+
+#if defined(ESP8266)
+        WiFiSleepType_t wifi_sleep_mode = (act_milli - last_page_load) >= 10000 ? WIFI_MODEM_SLEEP : WIFI_NONE_SLEEP;
+        if (cfg::use_modem_sleep && WiFi.getSleepMode() != wifi_sleep_mode) {
+                info_outln(F("Toggling sleep mode to: "), String(wifi_sleep_mode));
+                WiFi.setSleepMode(wifi_sleep_mode);
+        }
+#endif
 
 	if (send_now) {
 		if (cfg::dht_read) {

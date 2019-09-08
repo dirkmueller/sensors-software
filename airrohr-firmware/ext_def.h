@@ -151,6 +151,9 @@
 // use beta firmware
 #define USE_BETA 0
 
+// Suspend wifi modem when idle
+#define USE_MODEM_SLEEP 1
+
 // OLED Display SSD1306 connected?
 #define HAS_DISPLAY 0
 

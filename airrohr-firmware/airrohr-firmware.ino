@@ -573,7 +573,7 @@ String esp_chipid;
 
 String mac_addr_sta;
 
-unsigned long last_page_load = millis();
+unsigned long last_page_load;
 
 bool wificonfig_loop = false;
 
@@ -2251,6 +2251,7 @@ void setup_webserver() {
 //	debug_outln(IPAddress2String(WiFi.localIP()), DEBUG_MIN_INFO);
 	debug_outln(WiFi.localIP().toString(), DEBUG_MIN_INFO);
 	server.begin();
+	last_page_load = millis();
 }
 
 static int selectChannelForAp() {

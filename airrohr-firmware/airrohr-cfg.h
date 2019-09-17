@@ -56,6 +56,7 @@ enum ConfigShapeId {
 	Config_send2csv,
 	Config_auto_update,
 	Config_use_beta,
+	Config_use_sleep,
 	Config_has_display,
 	Config_has_sh1106,
 	Config_has_flipped_display,
@@ -116,6 +117,7 @@ const char CFG_KEY_SEND2AIRCMS[] PROGMEM = "send2aircms";
 const char CFG_KEY_SEND2CSV[] PROGMEM = "send2csv";
 const char CFG_KEY_AUTO_UPDATE[] PROGMEM = "auto_update";
 const char CFG_KEY_USE_BETA[] PROGMEM = "use_beta";
+const char CFG_KEY_USE_SLEEP[] PROGMEM = "use_sleep";
 const char CFG_KEY_HAS_DISPLAY[] PROGMEM = "has_display";
 const char CFG_KEY_HAS_SH1106[] PROGMEM = "has_sh1106";
 const char CFG_KEY_HAS_FLIPPED_DISPLAY[] PROGMEM = "has_flipped_display";
@@ -176,6 +178,7 @@ static constexpr ConfigShapeEntry configShape[] PROGMEM = {
 	{ Config_Type_Bool, 0, FPSTR(CFG_KEY_SEND2CSV), &cfg::send2csv },
 	{ Config_Type_Bool, 0, FPSTR(CFG_KEY_AUTO_UPDATE), &cfg::auto_update },
 	{ Config_Type_Bool, 0, FPSTR(CFG_KEY_USE_BETA), &cfg::use_beta },
+	{ Config_Type_Bool, 0, FPSTR(CFG_KEY_USE_SLEEP), &cfg::use_sleep },
 	{ Config_Type_Bool, 0, FPSTR(CFG_KEY_HAS_DISPLAY), &cfg::has_display },
 	{ Config_Type_Bool, 0, FPSTR(CFG_KEY_HAS_SH1106), &cfg::has_sh1106 },
 	{ Config_Type_Bool, 0, FPSTR(CFG_KEY_HAS_FLIPPED_DISPLAY), &cfg::has_flipped_display },
